@@ -1,0 +1,175 @@
+
+model DCOPF
+uses "mmxprs"; !gain access to the Xpress-Optimizer solver
+
+declarations
+	
+	BusPara = 1..13
+	GenPara = 1..21
+	BranchPara = 1..13
+	CostPara = 1..7
+	busparameters: set of string 
+	generatorparameters: set of string
+	branchparameters: set of string
+	costparameters: set of string
+		
+	!numbers are specific for this case and need to be changed manually
+	BusNo = 30
+	GenNo = 6
+	BranchNo = 41
+	
+	BusID = 1..BusNo
+	GenID = 1..GenNo
+	BranchID = 1..BranchNo
+	GenCostID = 1..GenNo
+	
+	!set J to zero if transmission switching is not used
+	J = 0
+	
+	buses: array(BusID, BusPara) of real
+	generators: array(GenID, GenPara) of real
+	branches: array(BranchID, BranchPara) of real
+	generatorCost: array(GenCostID, CostPara) of real
+	BigMs: array(BranchID) of real
+	
+	Pgen: array(GenID) of mpvar
+	Fl: array(BranchID) of mpvar
+	deltaB: array(BusID) of mpvar
+	z: array(BranchID) of mpvar
+	Costs: array(GenID) of mpvar
+	TotalCosts: mpvar
+
+		
+end-declarations
+
+initializations from "30case.dat"
+	
+	busparameters generatorparameters branchparameters costparameters 
+	buses generators branches generatorCost
+	
+end-initializations
+
+!Constraints:
+
+!introducing the binary variable for transmission switching
+forall(l in BranchID)
+	z(l) is_binary
+
+!allow negative values for flows so that per can flow in both directions along the line
+forall(l in BranchID)
+	Fl(l) is_free
+	
+
+!allow negative values for phase angles
+forall(b in BusID) 
+    deltaB(b) is_free
+    
+!Phase angle limits
+forall(b in BusID) do
+    AngleLimits1(b):= deltaB(b) <= 90
+    AngleLimits2(b):= deltaB(b) >=-90
+end-do
+
+
+!Generation level constraints:
+forall(g in GenID) do
+	GenL1(g) := Pgen(g) >= generators(g,10)
+	GenL2(g) := Pgen(g) <= generators(g,9)
+end-do
+
+
+!thermal limits:
+forall(l in BranchID) do
+	ThermL1(l) := Fl(l) >= -branches(l,6)*z(l)
+	ThermL2(l) := Fl(l) <= branches(l,6)*z(l)
+end-do
+
+
+
+!reference bus voltage phase:
+forall(b in BusID) do
+	if buses(b,2) = 3 then
+		deltaB(b) = 0 
+	end-if
+end-do
+
+
+!Kirchhoff Current Law:    
+forall(b in BusID) do
+	KCL1(b) := sum(g in GenID | generators(g,1) = b)( Pgen(g)) - sum(l in BranchID | branches(l,1) = b)( Fl(l)) + sum(l in BranchID | branches(l,2) = b) (Fl(l)) = buses(b,3)
+end-do
+
+!Big M:	
+forall(l in BranchID) do
+	BigMs(l) := (1/branches(l,4))*180 	
+end-do
+	
+!Kirchhoff Voltage Law: 
+forall (l in BranchID) do
+	KVL1(l):= -Fl(l) - (1/branches(l,4))*((sum(b in BusID | b = branches(l,1)) deltaB(b)) - (sum(b in BusID | b = branches(l,2)) deltaB(b))) >= -(1 - z(l))*BigMs(l)
+	KVL2(l):= -Fl(l) - (1/branches(l,4))*((sum(b in BusID | b = branches(l,1)) deltaB(b)) - (sum(b in BusID | b = branches(l,2)) deltaB(b))) <= (1 - z(l))*BigMs(l)
+end-do
+
+
+!restricting the number of open transmissions
+sum(l in BranchID) (1 - z(l)) = J
+
+
+!Linear piecewise approximation for costs (comment out to calculate without piecewise approximation)
+forall(g in GenID) do
+	LinCosts0(g):= Costs(g) >= -generatorCost(g,5)*0+2*generatorCost(g,5)*0*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts10(g):= Costs(g) >= -generatorCost(g,5)*100+2*generatorCost(g,5)*10*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts20(g):= Costs(g) >= -generatorCost(g,5)*400+2*generatorCost(g,5)*20*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts30(g):= Costs(g) >= -generatorCost(g,5)*900+2*generatorCost(g,5)*30*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts40(g):= Costs(g) >= -generatorCost(g,5)*1600+2*generatorCost(g,5)*40*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts50(g):= Costs(g) >= -generatorCost(g,5)*2500+2*generatorCost(g,5)*50*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts60(g):= Costs(g) >= -generatorCost(g,5)*3600+2*generatorCost(g,5)*60*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts70(g):= Costs(g) >= -generatorCost(g,5)*4900+2*generatorCost(g,5)*70*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts80(g):= Costs(g) >= -generatorCost(g,5)*6400+2*generatorCost(g,5)*80*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts90(g):= Costs(g) >= -generatorCost(g,5)*8100+2*generatorCost(g,5)*90*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts100(g):= Costs(g) >= -generatorCost(g,5)*10000+2*generatorCost(g,5)*100*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts110(g):= Costs(g) >= -generatorCost(g,5)*110*110+2*generatorCost(g,5)*110*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts120(g):= Costs(g) >= -generatorCost(g,5)*120*120+2*generatorCost(g,5)*120*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts130(g):= Costs(g) >= -generatorCost(g,5)*130*130+2*generatorCost(g,5)*130*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts140(g):= Costs(g) >= -generatorCost(g,5)*140*140+2*generatorCost(g,5)*140*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts150(g):= Costs(g) >= -generatorCost(g,5)*150*150+2*generatorCost(g,5)*150*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts160(g):= Costs(g) >= -generatorCost(g,5)*160*160+2*generatorCost(g,5)*160*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts170(g):= Costs(g) >= -generatorCost(g,5)*170*170+2*generatorCost(g,5)*170*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts180(g):= Costs(g) >= -generatorCost(g,5)*180*180+2*generatorCost(g,5)*180*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts190(g):= Costs(g) >= -generatorCost(g,5)*190*190+2*generatorCost(g,5)*190*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts200(g):= Costs(g) >= -generatorCost(g,5)*200*200+2*generatorCost(g,5)*200*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts210(g):= Costs(g) >= -generatorCost(g,5)*210*210+2*generatorCost(g,5)*210*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts220(g):= Costs(g) >= -generatorCost(g,5)*220*220+2*generatorCost(g,5)*220*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts230(g):= Costs(g) >= -generatorCost(g,5)*230*230+2*generatorCost(g,5)*230*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts240(g):= Costs(g) >= -generatorCost(g,5)*240*240+2*generatorCost(g,5)*240*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts250(g):= Costs(g) >= -generatorCost(g,5)*250*250+2*generatorCost(g,5)*250*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts260(g):= Costs(g) >= -generatorCost(g,5)*260*260+2*generatorCost(g,5)*260*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts270(g):= Costs(g) >= -generatorCost(g,5)*270*270+2*generatorCost(g,5)*270*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts280(g):= Costs(g) >= -generatorCost(g,5)*280*280+2*generatorCost(g,5)*280*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts290(g):= Costs(g) >= -generatorCost(g,5)*290*290+2*generatorCost(g,5)*290*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+	LinCosts300(g):= Costs(g) >= -generatorCost(g,5)*300*300+2*generatorCost(g,5)*300*Pgen(g)+generatorCost(g,6)*Pgen(g)+generatorCost(g,7)
+end-do
+
+
+TotalCost := sum(g in GenID) Costs(g)
+
+!objective
+minimize(TotalCost)
+
+
+!output
+forall(g in GenID) do
+	writeln("Power at generator ", generators(g,1), ": ", getsol(Pgen(g)), " MW")
+end-do 
+writeln
+forall(l in BranchID) do
+	writeln("Flow on line from bus ", branches(l,1), " to bus ", branches(l,2),  ": ", getsol(Fl(l)), " MW, and z is ", getsol(z(l)))
+end-do
+writeln
+forall(b in BusID) do
+	writeln("Phase at bus ", b, ": ", getsol(deltaB(b)), " degrees")
+end-do
+writeln
+writeln("Total generation cost is $", getsol(TotalCost), " per hour")
+
+end-model
