@@ -1,4 +1,4 @@
-# Honours Project: Solution Approaches to Optimal Power Flow
+# Honours Project: Optimal Power Flow Approximation for Transmission Switching
 
 By Mathew Legge, Migle Siauciulyte and Anna Warburton
 
